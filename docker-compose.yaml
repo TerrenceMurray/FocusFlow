@@ -1,0 +1,69 @@
+services:
+  postgres:
+    image: postgres
+    ports:
+     - 5432:5432
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=secretPassword
+      - POSTGRES_DB=focusflow
+    volumes:
+      - pgdata:/var/lib/pgsql/data
+    networks:
+      - intranet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    image: focus-flow-frontend
+    build:
+      context: ./frontend
+      target: development
+    user: root
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+    networks:
+      - intranet
+    command: ["pnpm", "dev"]
+
+  backend:
+    image: focus-flow-backend
+    build:
+      context: ./backend
+      target: development
+    user: root
+    volumes:
+      - ./backend:/usr/src/app        # Mount your source code
+      - /usr/src/app/node_modules     # Prevent overwriting node_modules
+    ports:
+      - 8000:8000   # Backend API
+      - 8081:8081   # Drizzle Studio
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgres://postgres:secretPassword@postgres:5432/focusflow
+    command: >
+      sh -c "pnpm concurrently --raw 'pnpm start:dev' 'pnpm drizzle-kit studio --port 8081 --host 0.0.0.0'"
+    networks:
+      - intranet
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  intranet:
+    name: focusflow_network
+    driver: bridge
+
+volumes:
+  pgdata:
+    driver: local
